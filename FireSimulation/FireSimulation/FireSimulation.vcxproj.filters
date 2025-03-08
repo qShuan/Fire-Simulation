@@ -36,4 +36,18 @@
       <Filter>Pliki nagłówkowe</Filter>
     </ClInclude>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="BrightnessExtraction.frag">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="GaussianHorizontal.frag">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="GaussianVertical.frag">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+    <None Include="CombineBlur.frag">
+      <Filter>Pliki zasobów</Filter>
+    </None>
+  </ItemGroup>
 </Project>

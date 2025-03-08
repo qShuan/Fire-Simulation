@@ -44,8 +44,6 @@ void Simulation::Update() {
 
 		solver.UpdateSolver();
 
-		window->clear();
-
 		solver.Render(window);
 		window->display();
 

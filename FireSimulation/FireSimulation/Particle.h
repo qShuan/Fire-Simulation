@@ -3,7 +3,7 @@
 #include <iostream>
 
 constexpr float PARTICLE_RADIUS = 4.f;
-constexpr float RENDER_RADIUS = PARTICLE_RADIUS * 3.5f;
+constexpr float RENDER_RADIUS = PARTICLE_RADIUS * 5.f;
 
 constexpr float MAX_TEMPERATURE = 1500.f;
 
@@ -69,7 +69,7 @@ public:
 
 	void TemperatureBehavior(const int window_height, const int window_width, float dt) {
 
-		LerpTemperature(temperature, 0.f, 2.f * dt);
+		LerpTemperature(temperature, 0.f, 2.5f * dt);
 
 		if (position.y + radius >= window_height - 20.f) {
 
