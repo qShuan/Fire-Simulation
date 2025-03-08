@@ -1,10 +1,17 @@
 #pragma once
 #include "Particle.h"
 #include <vector>
+#include <algorithm>
+#include "Collision_Grid.h"
 
-#define WINDOW_WIDTH 800
-#define WINDOW_HEIGHT 600
-#define RADIUS 7.5f
+#define FIRE 1
+
+constexpr int WINDOW_WIDTH = 800;
+constexpr int WINDOW_HEIGHT = 600;
+constexpr int CELL_SIZE = (int)PARTICLE_RADIUS;
+
+constexpr int GRID_WIDTH = WINDOW_WIDTH / CELL_SIZE;
+constexpr int GRID_HEIGHT = WINDOW_HEIGHT / CELL_SIZE;
 
 static float LerpRadius(float from, float to, float dt) {
 
@@ -13,71 +20,59 @@ static float LerpRadius(float from, float to, float dt) {
 	return new_r;
 }
 
-static sf::Color LerpColor(sf::Color from, sf::Color to, sf::Color to2, float dt) {
-
-
-
-	float intermediate_r = std::lerp(from.r, to.r, dt);
-	float intermediate_g = std::lerp(from.g, to.g, dt);
-	float intermediate_b = std::lerp(from.b, to.b, dt);
-
-	float final_r = std::lerp(intermediate_r, to2.r, dt);
-	float final_g = std::lerp(intermediate_g, to2.g, dt);
-	float final_b = std::lerp(intermediate_b, to2.b, dt);
-
-
-
-	return sf::Color(final_r, final_g, final_b);
-}
-
-static sf::Color LerpColor2(sf::Color from, sf::Color to, float dt) {
-
-
-	float final_r = std::lerp(from.r, to.r, dt);
-	float final_g = std::lerp(from.g, to.g, dt);
-	float final_b = std::lerp(from.b, to.b, dt);
-
-
-
-	return sf::Color(final_r, final_g, final_b);
-}
-
-
 class Solver {
 
 private:
 
-	bool paused = false;
 	float m_dt = 1.f / 60.f;
 	int sub_steps = 8;
+	float sub_dt = m_dt / (float)(sub_steps);
 
 	sf::Vector2f gravity = { 0.f, 1500.f };
+	sf::VertexArray va{ sf::Triangles }; // Needs to use a special texture
+	sf::Texture particle_texture;
 
-
-public:
+	std::vector<std::pair<int, int>> particles_grid_positions; // Holds a particle grid position on it's ID index
 
 	std::vector<Particle> particles;
 
-	Solver() = default;
+	void AddParticle(sf::Vector2f position, float radius = PARTICLE_RADIUS) {
 
+		// Prevent spawning particles too close together
+		for (const auto& p : particles) {
+			if (std::hypot(p.position.x - position.x, p.position.y - position.y) < (p.radius + radius)) {
+				return;
+			}
+		}
 
-	void AddParticle(sf::Vector2f position, float radius = RADIUS) {
+		int gridX = (int)position.x / CELL_SIZE, gridY = (int)position.y / CELL_SIZE;
 
-		Particle particle(position, radius);
+		Particle particle(position, radius, (int)particles.size());
 
+		collision_grid.cells[gridY * GRID_WIDTH + gridX].particle_ids.push_back((int)particles.size());
+		particles_grid_positions.push_back({ gridX, gridY });
 		particles.push_back(particle);
 	}
 
-	void UpdateSolver() {
+	void SpawnParticles() {
 
-		const float sub_dt = m_dt / static_cast<float>(sub_steps);
-		for (int i = 0; i < sub_steps; i++) {
-			ApplyGravity();
-			ApplyCollision();
-			ApplyTemperature();
-			UpdateObjects(sub_dt);
-			ApplyBorder();
+		for (int y = (int)PARTICLE_RADIUS * 2; y < WINDOW_HEIGHT - (int)PARTICLE_RADIUS - 5; y += (int)PARTICLE_RADIUS) {
+			for (int x = (int)PARTICLE_RADIUS * 2; x < WINDOW_WIDTH - (int)PARTICLE_RADIUS - 5; x += (int)PARTICLE_RADIUS) {
+
+				AddParticle({ (float)x + (float)(rand() % 2), (float)y }, PARTICLE_RADIUS);
+			}
 		}
+	}
+
+	void LoadTexture(const char* texture_path) {
+
+		if (!particle_texture.loadFromFile(texture_path)) {
+
+			std::cerr << "Failed to load texture\n";
+			exit(-1);
+		}
+
+		particle_texture.setSmooth(false);
 	}
 
 	void ApplyGravity() {
@@ -86,7 +81,7 @@ public:
 			particle.Accelerate(gravity);
 	}
 
-	void ApplyBorder() {
+	void SolveBorderCollisions() {
 
 		for (auto& particle : particles) {
 
@@ -111,18 +106,29 @@ public:
 		}
 	}
 
-	void ApplyCollision() {
+	void ApplyTemperature(float dt) {
 
-		for (int i = 0; i < particles.size(); i++) {
+		for (auto& particle : particles) {
 
-			for (int j = 0; j < particles.size(); j++) {
+			particle.TemperatureBehavior(WINDOW_HEIGHT, WINDOW_WIDTH, dt);
+		}
+	}
 
-				if (i == j)
-					continue;
+	void SolveCells(CollisionCell& curr, CollisionCell& other, float dt) {
 
-				sf::Vector2f dir = particles[i].position - particles[j].position;
+		for (auto& idx_1 : curr.particle_ids) {
+
+			Particle& curr_particle = particles[idx_1];
+
+			for (auto& idx_2 : other.particle_ids) {
+
+				if (idx_1 == idx_2) continue;
+
+				Particle& other_particle = particles[idx_2];
+
+				sf::Vector2f dir = curr_particle.position - other_particle.position;
 				float dst = dir.x * dir.x + dir.y * dir.y;
-				float min_dst = particles[i].radius + particles[j].radius;
+				float min_dst = curr_particle.radius + other_particle.radius;
 
 				if (dst < min_dst * min_dst) {
 
@@ -130,86 +136,144 @@ public:
 					sf::Vector2f normalized_dir = dir / root_dst;
 					float delta = 0.5f * (min_dst - root_dst);
 
-					float mass_ratio1 = particles[i].radius / (particles[i].radius + particles[j].radius);
-					float mass_ratio2 = particles[j].radius / (particles[i].radius + particles[j].radius);
 
-					particles[i].position += normalized_dir * delta * mass_ratio1;
-					particles[j].position -= normalized_dir * delta * mass_ratio2;
+					float correction_factor = 0.1f; // Makes sure the simulation doesn't explode
+					curr_particle.position += normalized_dir * delta * 0.5f * correction_factor;
+					other_particle.position -= normalized_dir * delta * 0.5f * correction_factor;
 
-					float total_temp = particles[i].temperature + particles[j].temperature;
-
+					// Temperature transfer on collision
+					float total_temp = curr_particle.temperature + other_particle.temperature;
 					total_temp /= 2.f;
 
-					particles[i].temperature += (total_temp - particles[i].temperature) * 0.7f * m_dt;
-					particles[j].temperature += (total_temp - particles[j].temperature) * 0.7f * m_dt;
+					curr_particle.temperature += (total_temp - curr_particle.temperature) * 0.5f * dt;
+					other_particle.temperature += (total_temp - other_particle.temperature) * 0.5f * dt;
 				}
 			}
 		}
 	}
 
-	void ApplyTemperature() {
+	void SolveGridCollisions(float dt) {
 
-		for (auto& particle : particles) {
+		// Only check non-redundant cells
+		const int dx[] = { 1, 1, 0, 0, -1 };
+		const int dy[] = { 0, 1, 0, 1, 1 };
 
-			if (particle.position.y + particle.radius >= WINDOW_HEIGHT - 20.f) {
+		for (int y = 0; y < GRID_HEIGHT; y++) {
 
-				if(particle.position.x + particle.radius < WINDOW_WIDTH / 3)
-					particle.temperature += (1500.f - particle.temperature) * 0.35f * m_dt;
-				else if(particle.position.x + particle.radius <= WINDOW_WIDTH / 2)
-					particle.temperature += (1500.f - particle.temperature) * 0.85f * m_dt;
-				else
-					particle.temperature += (1500.f - particle.temperature) * 0.35f * m_dt;
+			for (int x = 0; x < GRID_WIDTH; x++) {
+
+				auto& curr = collision_grid.GetCell(y * GRID_WIDTH + x);
+				if (curr.particle_ids.empty()) continue;
+
+
+				for (int k = 0; k < 5; k++) {
+					int nx = x + dx[k], ny = y + dy[k];
+					if (nx < 0 || ny < 0 || nx >= GRID_WIDTH || ny >= GRID_HEIGHT) continue;
+
+					auto& other = collision_grid.GetCell(ny * GRID_WIDTH + nx);
+
+					SolveCells(curr, other, dt);
+
+				}
 			}
-			else if (particle.position.y - particle.radius <= WINDOW_HEIGHT / 2.f)
-				particle.temperature += (0 - particle.temperature) * .6f * m_dt;
-
-			particle.temperature = std::clamp(particle.temperature, 0.f, 1500.f);
-
-			particle.Accelerate({ 0.f, -std::pow(particle.temperature, 2.f) * 0.01f * (particle.temperature / 1500.f)});
 		}
 	}
 
 	void UpdateObjects(float dt) {
 
-		for (auto& particle : particles)
+		for (auto& particle : particles) {
+
+			int curr_gridX = particles_grid_positions[particle.id].first, curr_gridY = particles_grid_positions[particle.id].second;
 			particle.Update(dt);
+
+			int gridX = (int)particle.position.x / CELL_SIZE;
+			int gridY = (int)particle.position.y / CELL_SIZE;
+
+			particles_grid_positions[particle.id].first = gridX;
+			particles_grid_positions[particle.id].second = gridY;
+
+			// Check if grid indices are within bounds
+			if (curr_gridX < 0 || curr_gridY < 0 || curr_gridX >= GRID_WIDTH || curr_gridY >= GRID_HEIGHT ||
+				gridX < 0 || gridY < 0 || gridX >= GRID_WIDTH || gridY >= GRID_HEIGHT) {
+				continue;
+			}
+
+			if (curr_gridX != gridX || curr_gridY != gridY) {
+
+				CollisionCell& pre_update = collision_grid.cells[curr_gridY * GRID_WIDTH + curr_gridX];
+				CollisionCell& post_update = collision_grid.cells[gridY * GRID_WIDTH + gridX];
+
+				auto pos = std::find(pre_update.particle_ids.begin(), pre_update.particle_ids.end(), particle.id);
+
+				// Only erase if the id was found
+				if (pos != pre_update.particle_ids.end())
+					pre_update.particle_ids.erase(pos);
+
+				post_update.particle_ids.push_back(particle.id);
+			}
+		}
 	}
 
 
+	void UpdateVA() {
+
+		for (int i = 0; i < particles.size(); i++) {
+
+			int id = i * 3;
+			sf::Vector2f pos = particles[i].position;
+			Particle& particle = particles[i];
+			float radius = particle.radius;
+
+			if (FIRE)
+				radius = LerpRadius(0.f, RENDER_RADIUS, (particle.temperature / 1500.f));
+
+			va[id].position = pos + sf::Vector2f(-radius, -radius);
+			va[id + 1].position = pos + sf::Vector2f(radius, -radius);
+			va[id + 2].position = pos + sf::Vector2f(0.f, radius);
+
+			va[id].texCoords = sf::Vector2f(0.f, 0.f);
+			va[id + 1].texCoords = sf::Vector2f(400.f, 0.f);
+			va[id + 2].texCoords = sf::Vector2f(200.f, 400.f);
+
+			va[id].color = particle.color;
+			va[id + 1].color = particle.color;
+			va[id + 2].color = particle.color;
+		}
+	}
+
+public:
+
+	CollisionGrid collision_grid;
+
+	Solver() {
+
+		collision_grid.cells.resize(GRID_HEIGHT * GRID_WIDTH);
+
+		LoadTexture("circle.png");
+		SpawnParticles();
+
+		va.resize(particles.size() * 3);
+	}
+
+	void UpdateSolver() {
+
+		for (int i = 0; i < sub_steps; i++) {
+
+			ApplyGravity();
+			SolveGridCollisions(sub_dt);
+			ApplyTemperature(sub_dt);
+			SolveBorderCollisions();
+			UpdateObjects(sub_dt);
+		}
+	}
+
 	void Render(sf::RenderWindow* window) {
 
-		sf::CircleShape circle;
-		circle.setPointCount(32);
+		UpdateVA();
 
-		for (auto& particle : particles) {
-
-			if (particle.temperature < 400.f)
-				continue;
-
-			particle.radius = LerpRadius(4.f, 10.f, particle.temperature / 1500.f);
-
-			circle.setRadius(particle.radius + 1.5f);
-			circle.setOrigin(particle.radius + 1.5f, particle.radius + 1.5f);
-			circle.setPosition(particle.position);
-
-
-			if (particle.temperature < 500.f) {
-
-				particle.color = LerpColor2(sf::Color::Black, sf::Color::Red, (particle.temperature / 500.f));
-			}
-			else if (particle.temperature < 800.f) {
-				particle.color = LerpColor2(sf::Color::Red, sf::Color(255, 147, 5), ((particle.temperature - 500.f) / 300.f));
-
-			}
-			else if(particle.temperature < 1100.f)
-				particle.color = LerpColor2(sf::Color(255, 147, 5), sf::Color(255, 206, 92), ((particle.temperature - 800.f) / 300.f));
-			else
-				particle.color = LerpColor2(sf::Color(255, 206, 92), sf::Color::White, ((particle.temperature - 1100.f) / 400.f));
-
-			circle.setFillColor(particle.color);
-
-			window->draw(circle);
-		}
+		sf::RenderStates states;
+		states.texture = &particle_texture;
+		window->draw(va, states);
 	}
 
 	std::vector<Particle>& GetParticles() {
