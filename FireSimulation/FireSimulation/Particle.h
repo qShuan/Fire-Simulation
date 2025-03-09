@@ -71,7 +71,7 @@ public:
 
 		LerpTemperature(temperature, 0.f, 2.5f * dt);
 
-		if (position.y + radius >= window_height - 20.f) {
+		if (position.y + radius >= window_height - 25.f) {
 
 			LerpTemperature(temperature, MAX_TEMPERATURE, 4.f * dt);
 		}

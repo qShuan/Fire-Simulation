@@ -151,6 +151,7 @@
     <None Include="CombineBlur.frag" />
     <None Include="GaussianHorizontal.frag" />
     <None Include="GaussianVertical.frag" />
+    <None Include="Pixelation.frag" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

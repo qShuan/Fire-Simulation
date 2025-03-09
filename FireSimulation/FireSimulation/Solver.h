@@ -24,6 +24,8 @@ class Solver {
 
 private:
 
+	bool pixelated = false;
+
 	float m_dt = 1.f / 60.f;
 	int sub_steps = 8;
 	float sub_dt = m_dt / (float)(sub_steps);
@@ -31,8 +33,8 @@ private:
 	sf::Vector2f gravity = { 0.f, 1500.f };
 	sf::VertexArray va{ sf::Triangles }; // Needs to use a special texture
 	sf::Texture particle_texture;
-	sf::Shader brightExtract, blurH, blurV, combine;
-	sf::RenderTexture sceneTexture, brightTexture, blurTexture1, blurTexture2;
+	sf::Shader brightExtract, blurH, blurV, combine, pixelate;
+	sf::RenderTexture sceneTexture, brightnessTexture, blurTextureH, blurTextureV, finalTexture;
 	sf::Texture sceneTextureRef;
 
 	std::vector<std::pair<int, int>> particles_grid_positions; // Holds a particle grid position on it's ID index
@@ -72,7 +74,7 @@ private:
 		if (!particle_texture.loadFromFile(texture_path)) {
 
 			std::cerr << "Failed to load texture\n";
-			exit(-1);
+			return;
 		}
 
 		particle_texture.setSmooth(false);
@@ -171,6 +173,7 @@ private:
 
 
 				for (int k = 0; k < 5; k++) {
+
 					int nx = x + dx[k], ny = y + dy[k];
 					if (nx < 0 || ny < 0 || nx >= GRID_WIDTH || ny >= GRID_HEIGHT) continue;
 
@@ -231,8 +234,9 @@ private:
 			if (FIRE)
 				radius = LerpRadius(0.f, RENDER_RADIUS, (particle.temperature / 1500.f));
 
-			if (radius < RENDER_RADIUS / 5.f)
+			if (radius < RENDER_RADIUS / 3.5f)
 				radius = 0.f;
+
 
 			va[id].position = pos + sf::Vector2f(-radius, -radius);
 			va[id + 1].position = pos + sf::Vector2f(radius, -radius);
@@ -248,6 +252,31 @@ private:
 		}
 	}
 
+
+	void InitTextures() {
+
+		sceneTexture.create(WINDOW_WIDTH, WINDOW_HEIGHT);
+		brightnessTexture.create(WINDOW_WIDTH, WINDOW_HEIGHT);
+		blurTextureH.create(WINDOW_WIDTH, WINDOW_HEIGHT);
+		blurTextureV.create(WINDOW_WIDTH, WINDOW_HEIGHT);
+		finalTexture.create(WINDOW_WIDTH, WINDOW_HEIGHT);
+	}
+
+	void InitShaders() {
+
+		brightExtract.loadFromFile("BrightnessExtraction.frag", sf::Shader::Fragment);
+		blurH.loadFromFile("GaussianHorizontal.frag", sf::Shader::Fragment);
+		blurV.loadFromFile("GaussianVertical.frag", sf::Shader::Fragment);
+		combine.loadFromFile("CombineBlur.frag", sf::Shader::Fragment);
+		pixelate.loadFromFile("Pixelation.frag", sf::Shader::Fragment);
+
+
+		blurH.setUniform("resolution", (float)WINDOW_WIDTH);
+		blurV.setUniform("resolution", (float)WINDOW_HEIGHT);
+		pixelate.setUniform("resolution", sf::Vector2f((float)WINDOW_WIDTH, (float)WINDOW_HEIGHT));
+		pixelate.setUniform("pixelSize", 5.f);
+	}
+
 public:
 
 	CollisionGrid collision_grid;
@@ -261,17 +290,13 @@ public:
 
 		va.resize(particles.size() * 3);
 
-		sceneTexture.create(WINDOW_WIDTH, WINDOW_HEIGHT);
-		brightTexture.create(WINDOW_WIDTH, WINDOW_HEIGHT);
-		blurTexture1.create(WINDOW_WIDTH, WINDOW_HEIGHT);
-		blurTexture2.create(WINDOW_WIDTH, WINDOW_HEIGHT);
+		InitTextures();
+		InitShaders();
+	}
 
+	void SetPixelated() {
 
-
-		brightExtract.loadFromFile("BrightnessExtraction.frag", sf::Shader::Fragment);
-		blurH.loadFromFile("GaussianHorizontal.frag", sf::Shader::Fragment);
-		blurV.loadFromFile("GaussianVertical.frag", sf::Shader::Fragment);
-		combine.loadFromFile("CombineBlur.frag", sf::Shader::Fragment);
+		pixelated = !pixelated;
 	}
 
 	void UpdateSolver() {
@@ -290,45 +315,49 @@ public:
 
 		UpdateVA();
 
-		sceneTextureRef = sceneTexture.getTexture();
-		brightExtract.setUniform("texture", sceneTextureRef);
-		blurH.setUniform("texture", brightTexture.getTexture());
-		blurH.setUniform("resolution", static_cast<float>(WINDOW_WIDTH)); // Adjust based on screen size
-		blurV.setUniform("texture", blurTexture1.getTexture());
-		blurV.setUniform("resolution", static_cast<float>(WINDOW_HEIGHT)); // Adjust based on screen size
-		combine.setUniform("originalScene", sceneTexture.getTexture());
-		combine.setUniform("blurredBloom", blurTexture2.getTexture());
-
 		sceneTexture.clear();
 		sf::RenderStates states;
 		states.texture = &particle_texture;
 		sceneTexture.draw(va, states);
 		sceneTexture.display();
 
-		// Step 2: Extract bright areas
-		brightTexture.clear();
+
+		brightnessTexture.clear();
+		brightExtract.setUniform("texture", sceneTexture.getTexture());
 		sf::Sprite sceneSprite(sceneTexture.getTexture());
-		brightTexture.draw(sceneSprite, &brightExtract); // Apply brightness extraction
-		brightTexture.display();
+		brightnessTexture.draw(sceneSprite, &brightExtract); // Apply brightness extraction
+		brightnessTexture.display();
 
-		// Step 3: Apply horizontal blur
-		blurTexture1.clear();
-		sf::Sprite brightSprite(brightTexture.getTexture());
-		brightSprite.setScale(1, -1);  // Flip vertically
-		brightSprite.setPosition(0.f, (float)WINDOW_HEIGHT);  // Move it back into place
-		blurTexture1.draw(brightSprite, &blurH);
-		blurTexture1.display();
 
-		// Step 4: Apply vertical blur
-		blurTexture2.clear();
-		sf::Sprite blurSprite(blurTexture1.getTexture());
-		blurTexture2.draw(blurSprite, &blurV);
-		blurTexture2.display();
+		blurTextureH.clear();
+		blurH.setUniform("texture", brightnessTexture.getTexture());
+		sf::Sprite brightSprite(brightnessTexture.getTexture());
+		blurTextureH.draw(brightSprite, &blurH);
+		blurTextureH.display();
 
-		window->clear();
+
+		blurTextureV.clear();
+		blurV.setUniform("texture", blurTextureH.getTexture());
+		sf::Sprite blurSprite(blurTextureH.getTexture());
+		blurTextureV.draw(blurSprite, &blurV);
+		blurTextureV.display();
+
+
+		finalTexture.clear();
 		combine.setUniform("originalScene", sceneTexture.getTexture());
-		combine.setUniform("blurredBloom", blurTexture2.getTexture());
-		window->draw(sceneSprite, &combine); // Final render pass
+		combine.setUniform("blurredBloom", blurTextureV.getTexture());
+		finalTexture.draw(sceneSprite, &combine);
+		finalTexture.display();
+
+
+		pixelate.setUniform("texture", finalTexture.getTexture());
+		window->clear();
+		sf::Sprite finalSprite(finalTexture.getTexture());
+
+		if (pixelated)
+			window->draw(finalSprite, &pixelate); // Final render pass
+		else
+			window->draw(finalSprite, &combine);
 	}
 
 	std::vector<Particle>& GetParticles() {

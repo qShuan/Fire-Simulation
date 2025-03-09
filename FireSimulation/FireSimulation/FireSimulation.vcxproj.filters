@@ -49,5 +49,8 @@
     <None Include="CombineBlur.frag">
       <Filter>Pliki zasobów</Filter>
     </None>
+    <None Include="Pixelation.frag">
+      <Filter>Pliki zasobów</Filter>
+    </None>
   </ItemGroup>
 </Project>

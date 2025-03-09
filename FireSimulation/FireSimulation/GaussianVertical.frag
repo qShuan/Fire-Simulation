@@ -20,5 +20,5 @@ void main() {
     sum += texture2D(texture, gl_TexCoord[0].xy + texOffset * 5.0) * 0.04;
     sum += texture2D(texture, gl_TexCoord[0].xy + texOffset * 6.0) * 0.02;
 
-    gl_FragColor = sum * 1.5;
+    gl_FragColor = sum * 2.0;
 }

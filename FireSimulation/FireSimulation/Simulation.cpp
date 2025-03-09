@@ -17,16 +17,10 @@ void Simulation::HandleEvent(sf::Event& e) {
 		window->close();
 	}
 
-	if (e.type == e.MouseButtonPressed) {
+	if (e.type == e.KeyPressed) {
 
-		if (e.key.code == sf::Mouse::Right) {
-
-			sf::Vector2f mouse_pos = static_cast<sf::Vector2f>(sf::Mouse::getPosition(*window));
-
-			int gridX = (int)mouse_pos.x / CELL_SIZE, gridY = (int)mouse_pos.y / CELL_SIZE;
-
-			solver.collision_grid.cells[gridY * GRID_WIDTH + gridX].GetIds();
-		}
+		if (e.key.code == sf::Keyboard::P)
+			solver.SetPixelated();
 	}
 }
 
