@@ -1,7 +1,7 @@
 # Fire Simulation
 
 ## Overview
-[This project is based on Pezzza's Work fire simulation video.](https://www.youtube.com/watch?v=xKEFlg_JMmU&t=116s)
+This project is based on [Pezzza's Work fire simulation video.](https://www.youtube.com/watch?v=xKEFlg_JMmU&t=116s)
 
 ## Build
 
