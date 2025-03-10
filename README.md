@@ -23,4 +23,4 @@
 
 4. **Build and run**
    
-      Choose Release x64 configuration and build it from inside Visual Studio. Run it either directly from VS or launch the generated executable in the output directory (x64/Release/) - for that you need to move all .frag files to this location.
+      Choose Release x64 configuration and build it from inside Visual Studio. Run it either directly from VS or launch the generated executable in the output directory (x64/Release/) - for that you need to move all .frag and .png files to this location.
