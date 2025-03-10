@@ -77,7 +77,7 @@ public:
 		}
 
 		temperature = std::clamp(temperature, 0.f, MAX_TEMPERATURE);
-		Accelerate({ 0.f, -std::pow(temperature, 2.f) * 0.01f * (temperature / MAX_TEMPERATURE) });
+		Accelerate({ 0.f, -std::pow(temperature, 2.f) * 0.015f * (temperature / MAX_TEMPERATURE) });
 
 		const float temp_diff = 300.f;
 		const float heat_temp = 500.f;

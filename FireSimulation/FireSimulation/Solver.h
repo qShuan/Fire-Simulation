@@ -13,12 +13,15 @@ constexpr int CELL_SIZE = (int)PARTICLE_RADIUS;
 constexpr int GRID_WIDTH = WINDOW_WIDTH / CELL_SIZE;
 constexpr int GRID_HEIGHT = WINDOW_HEIGHT / CELL_SIZE;
 
+constexpr int MAX_PARTICLES = 10000;
+
 static float LerpRadius(float from, float to, float dt) {
 
 	float new_r = std::lerp(from, to, dt);
 
 	return new_r;
 }
+
 
 class Solver {
 
@@ -44,29 +47,19 @@ private:
 	void AddParticle(sf::Vector2f position, float radius = PARTICLE_RADIUS) {
 
 		// Prevent spawning particles too close together
-		for (const auto& p : particles) {
+		/*for (const auto& p : particles) {
 			if (std::hypot(p.position.x - position.x, p.position.y - position.y) < (p.radius + radius)) {
 				return;
 			}
-		}
+		}*/
 
-		int gridX = (int)position.x / CELL_SIZE, gridY = (int)position.y / CELL_SIZE;
+		int grid_position_x = (int)position.x / CELL_SIZE, grid_position_y = (int)position.y / CELL_SIZE;
 
 		Particle particle(position, radius, (int)particles.size());
 
-		collision_grid.cells[gridY * GRID_WIDTH + gridX].particle_ids.push_back((int)particles.size());
-		particles_grid_positions.push_back({ gridX, gridY });
+		collision_grid.cells[grid_position_y * GRID_WIDTH + grid_position_x].particle_ids.push_back((int)particles.size());
+		particles_grid_positions.push_back({ grid_position_x, grid_position_y });
 		particles.push_back(particle);
-	}
-
-	void SpawnParticles() {
-
-		for (int y = (int)PARTICLE_RADIUS * 2; y < WINDOW_HEIGHT - (int)PARTICLE_RADIUS - 5; y += (int)PARTICLE_RADIUS) {
-			for (int x = (int)PARTICLE_RADIUS * 2; x < WINDOW_WIDTH - (int)PARTICLE_RADIUS - 5; x += (int)PARTICLE_RADIUS) {
-
-				AddParticle({ (float)x + (float)(rand() % 2), (float)y }, PARTICLE_RADIUS);
-			}
-		}
 	}
 
 	void LoadTexture(const char* texture_path) {
@@ -86,13 +79,14 @@ private:
 			particle.Accelerate(gravity);
 	}
 
+
 	void SolveBorderCollisions() {
 
 		for (auto& particle : particles) {
 
-			const float velocity_loss_factor = 1.f;
-			const float dampening = 0.85f;
-			const sf::Vector2f position = particle.position;
+			float velocity_loss_factor = 1.f;
+			float dampening = 0.85f;
+			sf::Vector2f position = particle.position;
 
 
 			//Horizontal
@@ -101,7 +95,7 @@ private:
 				particle.position.x = position.x < particle.radius ? particle.radius : WINDOW_WIDTH - particle.radius;
 				particle.SetVelocity({ -particle.GetVelocity().x, particle.GetVelocity().y * dampening }, velocity_loss_factor);
 			}
-
+			
 			//Vertical
 			if (position.y < particle.radius || position.y + particle.radius > WINDOW_HEIGHT) {
 
@@ -142,7 +136,7 @@ private:
 					float delta = 0.5f * (min_dst - root_dst);
 
 
-					float correction_factor = 0.1f; // Makes sure the simulation doesn't explode
+					float correction_factor = 0.2f; // Makes sure the simulation doesn't explode
 
 					curr_particle.position += normalized_dir * delta * 0.5f * correction_factor;
 					other_particle.position -= normalized_dir * delta * 0.5f * correction_factor;
@@ -161,10 +155,16 @@ private:
 	void SolveGridCollisions(float dt) {
 
 		// Only check non-redundant cells
-		const int dx[] = { 1, 1, 0, 0, -1 };
-		const int dy[] = { 0, 1, 0, 1, 1 };
+		const std::vector<std::pair<int, int>> neighbors = {
+			{-1, 0}, // Left
+			{-1, -1}, // Left Up
+			{0, 0}, // Current
+			{0, -1}, // Up
+			{1, -1} // Right up
+		};
 
-		for (int y = 0; y < GRID_HEIGHT; y++) {
+		// Iterate from bottom to top
+		for (int y = GRID_HEIGHT - 1; y >= 0; y--) {
 
 			for (int x = 0; x < GRID_WIDTH; x++) {
 
@@ -172,49 +172,65 @@ private:
 				if (curr.particle_ids.empty()) continue;
 
 
-				for (int k = 0; k < 5; k++) {
+				for (auto& [dx, dy] : neighbors) {
 
-					int nx = x + dx[k], ny = y + dy[k];
-					if (nx < 0 || ny < 0 || nx >= GRID_WIDTH || ny >= GRID_HEIGHT) continue;
+					int nx = x + dx, ny = y + dy;
+					if (nx < 0 || ny < 0 || nx >= GRID_WIDTH) continue;
 
 					auto& other = collision_grid.GetCell(ny * GRID_WIDTH + nx);
 
 					SolveCells(curr, other, dt);
-
 				}
 			}
 		}
+	}
+
+	int FindParticleIDIndex(const CollisionCell& cell, int id) {
+
+		int index = -1;
+
+		for (int i = 0; i < cell.particle_ids.size(); i++) {
+
+			if (cell.particle_ids[i] == id) {
+
+				index = i;
+				break;
+			}
+		}
+
+		return index;
 	}
 
 	void UpdateObjects(float dt) {
 
 		for (auto& particle : particles) {
 
-			int curr_gridX = particles_grid_positions[particle.id].first, curr_gridY = particles_grid_positions[particle.id].second;
+			int curr_grid_position_x = particles_grid_positions[particle.id].first, curr_grid_position_y = particles_grid_positions[particle.id].second;
 			particle.Update(dt);
 
-			int gridX = (int)particle.position.x / CELL_SIZE;
-			int gridY = (int)particle.position.y / CELL_SIZE;
+			int grid_position_x = (int)particle.position.x / CELL_SIZE;
+			int grid_position_y = (int)particle.position.y / CELL_SIZE;
 
-			particles_grid_positions[particle.id].first = gridX;
-			particles_grid_positions[particle.id].second = gridY;
+			particles_grid_positions[particle.id].first = grid_position_x;
+			particles_grid_positions[particle.id].second = grid_position_y;
 
 			// Check if grid indices are within bounds
-			if (curr_gridX < 0 || curr_gridY < 0 || curr_gridX >= GRID_WIDTH || curr_gridY >= GRID_HEIGHT ||
-				gridX < 0 || gridY < 0 || gridX >= GRID_WIDTH || gridY >= GRID_HEIGHT) {
+			if (curr_grid_position_x < 0 || curr_grid_position_y < 0 || curr_grid_position_x >= GRID_WIDTH || curr_grid_position_y >= GRID_HEIGHT ||
+				grid_position_x < 0 || grid_position_y < 0 || grid_position_x >= GRID_WIDTH || grid_position_y >= GRID_HEIGHT) {
 				continue;
 			}
 
-			if (curr_gridX != gridX || curr_gridY != gridY) {
+			// If grid positions are not the same, update cells
+			if (curr_grid_position_x != grid_position_x || curr_grid_position_y != grid_position_y) {
 
-				CollisionCell& pre_update = collision_grid.cells[curr_gridY * GRID_WIDTH + curr_gridX];
-				CollisionCell& post_update = collision_grid.cells[gridY * GRID_WIDTH + gridX];
+				CollisionCell& pre_update = collision_grid.cells[curr_grid_position_y * GRID_WIDTH + curr_grid_position_x];
+				CollisionCell& post_update = collision_grid.cells[grid_position_y * GRID_WIDTH + grid_position_x];
 
-				auto pos = std::find(pre_update.particle_ids.begin(), pre_update.particle_ids.end(), particle.id);
+				int index = FindParticleIDIndex(pre_update, particle.id);
 
 				// Only erase if the id was found
-				if (pos != pre_update.particle_ids.end())
-					pre_update.particle_ids.erase(pos);
+				if (index != -1)
+					pre_update.particle_ids.erase(pre_update.particle_ids.begin() + index);
 
 				post_update.particle_ids.push_back(particle.id);
 			}
@@ -231,12 +247,18 @@ private:
 			Particle& particle = particles[i];
 			float radius = particle.radius;
 
-			if (FIRE)
-				radius = LerpRadius(0.f, RENDER_RADIUS, (particle.temperature / 1500.f));
 
-			if (radius < RENDER_RADIUS / 3.5f)
-				radius = 0.f;
+			// Change radius depending on temperature
+			if (particles.size() >= MAX_PARTICLES) {
 
+				if (FIRE) {
+
+					radius = LerpRadius(0.f, RENDER_RADIUS, (particle.temperature / 1500.f));
+
+					if (radius < RENDER_RADIUS / 4.f)
+						radius = 0.f;
+				}
+			}
 
 			va[id].position = pos + sf::Vector2f(-radius, -radius);
 			va[id + 1].position = pos + sf::Vector2f(radius, -radius);
@@ -286,12 +308,17 @@ public:
 		collision_grid.cells.resize(GRID_HEIGHT * GRID_WIDTH);
 
 		LoadTexture("circle.png");
-		SpawnParticles();
 
-		va.resize(particles.size() * 3);
+		va.resize(MAX_PARTICLES * 3);
 
 		InitTextures();
 		InitShaders();
+	}
+
+	void Spawn(sf::Vector2f position) {
+
+		if(particles.size() < MAX_PARTICLES)
+			AddParticle(position + sf::Vector2f((float)(rand() % 2), 0.f));
 	}
 
 	void SetPixelated() {
@@ -305,7 +332,10 @@ public:
 
 			ApplyGravity();
 			SolveGridCollisions(sub_dt);
-			ApplyTemperature(sub_dt);
+
+			if(particles.size() >= MAX_PARTICLES)
+				ApplyTemperature(sub_dt);
+
 			SolveBorderCollisions();
 			UpdateObjects(sub_dt);
 		}
@@ -325,7 +355,7 @@ public:
 		brightnessTexture.clear();
 		brightExtract.setUniform("texture", sceneTexture.getTexture());
 		sf::Sprite sceneSprite(sceneTexture.getTexture());
-		brightnessTexture.draw(sceneSprite, &brightExtract); // Apply brightness extraction
+		brightnessTexture.draw(sceneSprite, &brightExtract);
 		brightnessTexture.display();
 
 
