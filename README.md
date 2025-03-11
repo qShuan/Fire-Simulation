@@ -3,6 +3,9 @@
 ## Overview
 This project is based on [Pezzza's Work fire simulation video.](https://www.youtube.com/watch?v=xKEFlg_JMmU&t=116s)
 
+## Controls
+You can pixelate the image by pressing P.
+
 ## Build
 
 ### Prerequisites
